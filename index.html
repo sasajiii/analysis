@@ -462,16 +462,18 @@ function drawTimeSeries() {
     
     var ctx = canvas.getContext('2d');
     var originalColors = datasets.map(function(ds) { return ds.borderColor; });
+    var lastHoveredIndex = -1;
     
     function resetAllLines() {
-        if (chartInstance) {
+        if (chartInstance && lastHoveredIndex !== -1) {
+            lastHoveredIndex = -1;
             chartInstance.data.datasets.forEach(function(dataset, index) {
                 dataset.borderColor = originalColors[index];
                 dataset.borderWidth = 2;
                 dataset.pointRadius = 0;
                 dataset.pointHoverRadius = 6;
             });
-            chartInstance.update();
+            chartInstance.update('none');
         }
     }
     
@@ -492,21 +494,25 @@ function drawTimeSeries() {
                 if (activeElements.length > 0) {
                     var hoveredIndex = activeElements[0].datasetIndex;
                     
-                    chartInstance.data.datasets.forEach(function(dataset, index) {
-                        if (index === hoveredIndex) {
-                            dataset.borderColor = originalColors[index];
-                            dataset.borderWidth = 4;
-                            dataset.pointRadius = 4;
-                            dataset.pointHoverRadius = 7;
-                        } else {
-                            dataset.borderColor = 'rgba(200, 200, 200, 0.3)';
-                            dataset.borderWidth = 1;
-                            dataset.pointRadius = 0;
-                            dataset.pointHoverRadius = 0;
-                        }
-                    });
-                    
-                    chartInstance.update();
+                    if (hoveredIndex !== lastHoveredIndex) {
+                        lastHoveredIndex = hoveredIndex;
+                        
+                        chartInstance.data.datasets.forEach(function(dataset, index) {
+                            if (index === hoveredIndex) {
+                                dataset.borderColor = originalColors[index];
+                                dataset.borderWidth = 4;
+                                dataset.pointRadius = 4;
+                                dataset.pointHoverRadius = 7;
+                            } else {
+                                dataset.borderColor = 'rgba(200, 200, 200, 0.3)';
+                                dataset.borderWidth = 1;
+                                dataset.pointRadius = 0;
+                                dataset.pointHoverRadius = 0;
+                            }
+                        });
+                        
+                        chartInstance.update('none');
+                    }
                 } else {
                     resetAllLines();
                 }
@@ -591,6 +597,7 @@ function drawTimeSeries() {
     });
     
     canvas.addEventListener('mouseleave', resetAllLines);
+    canvas.addEventListener('mouseout', resetAllLines);
     
     var legendHtml = validStores.map(function(store, index) {
         var color = chartColors[index % chartColors.length];
