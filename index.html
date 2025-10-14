@@ -461,6 +461,20 @@ function drawTimeSeries() {
     });
     
     var ctx = canvas.getContext('2d');
+    var originalColors = datasets.map(function(ds) { return ds.borderColor; });
+    
+    function resetAllLines() {
+        if (chartInstance) {
+            chartInstance.data.datasets.forEach(function(dataset, index) {
+                dataset.borderColor = originalColors[index];
+                dataset.borderWidth = 2;
+                dataset.pointRadius = 0;
+                dataset.pointHoverRadius = 6;
+            });
+            chartInstance.update();
+        }
+    }
+    
     chartInstance = new Chart(ctx, {
         type: 'line',
         data: {
@@ -471,8 +485,31 @@ function drawTimeSeries() {
             responsive: true,
             maintainAspectRatio: false,
             interaction: {
-                mode: 'point',
+                mode: 'nearest',
                 intersect: false
+            },
+            onHover: function(event, activeElements) {
+                if (activeElements.length > 0) {
+                    var hoveredIndex = activeElements[0].datasetIndex;
+                    
+                    chartInstance.data.datasets.forEach(function(dataset, index) {
+                        if (index === hoveredIndex) {
+                            dataset.borderColor = originalColors[index];
+                            dataset.borderWidth = 4;
+                            dataset.pointRadius = 4;
+                            dataset.pointHoverRadius = 7;
+                        } else {
+                            dataset.borderColor = 'rgba(200, 200, 200, 0.3)';
+                            dataset.borderWidth = 1;
+                            dataset.pointRadius = 0;
+                            dataset.pointHoverRadius = 0;
+                        }
+                    });
+                    
+                    chartInstance.update();
+                } else {
+                    resetAllLines();
+                }
             },
             plugins: {
                 legend: {
@@ -552,6 +589,8 @@ function drawTimeSeries() {
             }
         }
     });
+    
+    canvas.addEventListener('mouseleave', resetAllLines);
     
     var legendHtml = validStores.map(function(store, index) {
         var color = chartColors[index % chartColors.length];
