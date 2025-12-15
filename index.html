@@ -94,6 +94,12 @@
 <div id="spike-content" class="tab-content">
 <div class="filters">
 <div class="filter-row">
+<div class="filter-group">
+<label class="filter-label">改定日で絞り込み</label>
+<select class="filter-control" id="revisionDateSelect" onchange="applySpikeFilters()">
+<option value="">すべて</option>
+</select>
+</div>
 <div class="filter-group dropdown-container">
 <label class="filter-label">店名で検索</label>
 <input type="text" class="filter-control" id="spikeSearchBox" placeholder="店名を入力..." onfocus="showSpikeStoreNameDropdown()" oninput="filterSpikeStoreNameDropdown()" onblur="hideSpikeStoreNameDropdown()">
@@ -101,9 +107,9 @@
 </div>
 <div class="filter-group"><label class="filter-label">県</label><select class="filter-control" id="spikePrefectureSelect" onchange="applySpikeFilters()"><option value="">すべて</option></select></div>
 <div class="filter-group"><label class="filter-label">価格帯</label><select class="filter-control" id="spikePriceSelect" onchange="applySpikeFilters()"><option value="">すべて</option></select></div>
-<div class="filter-group"><label class="filter-label">ジャンル</label><select class="filter-control" id="spikeGenreSelect" onchange="applySpikeFilters()"><option value="">すべて</option></select></div>
 </div>
 <div class="filter-row">
+<div class="filter-group"><label class="filter-label">ジャンル</label><select class="filter-control" id="spikeGenreSelect" onchange="applySpikeFilters()"><option value="">すべて</option></select></div>
 <div class="filter-group dropdown-container">
 <label class="filter-label">コンサル名で検索</label>
 <input type="text" class="filter-control" id="spikeConsultantBox" placeholder="コンサル名を入力..." onfocus="showSpikeConsultantDropdown()" oninput="filterSpikeConsultantDropdown()" onblur="hideSpikeConsultantDropdown()">
@@ -116,7 +122,7 @@
 </div>
 </div>
 </div>
-<div class="period-info">全期間の最大単月変動ランキング</div>
+<div class="period-info" id="spikeRevisionInfo">改定日を選択してください</div>
 <div class="stats" id="spikeStatsArea"></div>
 <div class="rankings">
 <div class="ranking-section"><div class="ranking-title up">⚡ 急上昇ランキング</div><div id="spikeUpList"></div></div>
@@ -149,6 +155,7 @@ var chartColors = ['#667eea','#10b981','#ef4444','#f59e0b','#8b5cf6','#06b6d4','
 var allConsultants = [];
 var allCompanies = [];
 var allStoreNames = [];
+var allRevisionDates = [];
 
 function escapeHtml(text) {
     var div = document.createElement('div');
@@ -161,6 +168,19 @@ function normalizeDate(dateStr) {
     var match = dateStr.match(/^(\d{4})[-\/]?(\d{1,2})$/);
     if (match) {
         return match[1] + '-' + match[2].padStart(2, '0');
+    }
+    return dateStr;
+}
+
+function parseRevisionDate(dateStr) {
+    if (!dateStr) return null;
+    // YYYY/M/D または YYYY-M-D 形式をパース
+    var parts = dateStr.split(/[-\/]/);
+    if (parts.length === 3) {
+        var year = parts[0];
+        var month = parts[1].padStart(2, '0');
+        var day = parts[2].padStart(2, '0');
+        return year + '/' + month + '/' + day;
     }
     return dateStr;
 }
@@ -273,6 +293,27 @@ function displayResults(data) {
     allConsultants = Array.from(new Set(storeData.map(function(s) { return s.consultantName; }))).filter(function(c) { return c && c !== '不明'; }).sort();
     allCompanies = Array.from(new Set(storeData.map(function(s) { return s.companyName; }))).filter(function(c) { return c && c !== '不明'; }).sort();
     
+    // 改定日リストを抽出
+    var revisionDatesSet = new Set();
+    rawData.forEach(function(row) {
+        var revDate = parseRevisionDate(row['更新日']);
+        if (revDate) {
+            revisionDatesSet.add(revDate);
+        }
+    });
+    allRevisionDates = Array.from(revisionDatesSet).sort().reverse();
+    
+    // 改定日セレクトボックスを設定
+    var revisionSelect = document.getElementById('revisionDateSelect');
+    if (revisionSelect && allRevisionDates.length > 0) {
+        revisionSelect.innerHTML = '<option value="all">全期間</option>' + 
+            allRevisionDates.map(function(date) {
+                return '<option value="' + escapeHtml(date) + '">' + escapeHtml(date) + '</option>';
+            }).join('');
+        // デフォルトで最新日を選択
+        revisionSelect.value = allRevisionDates[0];
+    }
+    
     document.getElementById('results').classList.remove('hidden');
     setupFilters();
     updateStats();
@@ -374,6 +415,7 @@ function updateGraphFilters() {
 }
 
 function applySpikeFilters() {
+    var selectedRevisionDate = document.getElementById('revisionDateSelect').value;
     var searchTerm = document.getElementById('spikeSearchBox').value.toLowerCase();
     var prefecture = document.getElementById('spikePrefectureSelect').value;
     var priceRange = document.getElementById('spikePriceSelect').value;
@@ -381,18 +423,127 @@ function applySpikeFilters() {
     var consultantTerm = document.getElementById('spikeConsultantBox').value.toLowerCase();
     var companyTerm = document.getElementById('spikeCompanyBox').value.toLowerCase();
     
-    filteredSpikeData = storeData.filter(function(store) {
-        if (searchTerm && !store.name.toLowerCase().includes(searchTerm)) return false;
-        if (prefecture && store.prefecture !== prefecture) return false;
-        if (priceRange && store.priceRange !== priceRange) return false;
-        if (genre && !store.genre.includes(genre)) return false;
-        if (consultantTerm && !store.consultantName.toLowerCase().includes(consultantTerm)) return false;
-        if (companyTerm && !store.companyName.toLowerCase().includes(companyTerm)) return false;
-        return true;
-    });
+    if (!selectedRevisionDate) {
+        document.getElementById('spikeRevisionInfo').textContent = '改定日を選択してください';
+        document.getElementById('spikeStatsArea').innerHTML = '';
+        document.getElementById('spikeUpList').innerHTML = '<div class="empty-state">改定日を選択してください</div>';
+        document.getElementById('spikeDownList').innerHTML = '<div class="empty-state">改定日を選択してください</div>';
+        return;
+    }
     
-    updateSpikeStats();
-    displaySpikeRanking();
+    if (selectedRevisionDate === 'all') {
+        // 全期間の場合は、店舗ごとの最大変動を表示
+        var baseData = storeData.filter(function(store) {
+            if (searchTerm && !store.name.toLowerCase().includes(searchTerm)) return false;
+            if (prefecture && store.prefecture !== prefecture) return false;
+            if (priceRange && store.priceRange !== priceRange) return false;
+            if (genre && !store.genre.includes(genre)) return false;
+            if (consultantTerm && !store.consultantName.toLowerCase().includes(consultantTerm)) return false;
+            if (companyTerm && !store.companyName.toLowerCase().includes(companyTerm)) return false;
+            return true;
+        });
+        
+        // 上昇用と下降用で別々にデータを作成
+        filteredSpikeData = [];
+        
+        baseData.forEach(function(store) {
+            // 上昇データ
+            if (store.maxPositiveDiff > 0) {
+                filteredSpikeData.push({
+                    id: store.id,
+                    name: store.name,
+                    prefecture: store.prefecture,
+                    genre: store.genre,
+                    priceRange: store.priceRange,
+                    consultantName: store.consultantName,
+                    companyName: store.companyName,
+                    score: store.endScore,
+                    scoreDiff: store.maxPositiveDiff,
+                    reviewCount: store.currentReviewCount,
+                    revisionDate: store.maxPositiveMonth,
+                    isAllPeriod: true
+                });
+            }
+            
+            // 下降データ
+            if (store.maxNegativeDiff < 0) {
+                filteredSpikeData.push({
+                    id: store.id + '_neg',  // IDを区別するため
+                    name: store.name,
+                    prefecture: store.prefecture,
+                    genre: store.genre,
+                    priceRange: store.priceRange,
+                    consultantName: store.consultantName,
+                    companyName: store.companyName,
+                    score: store.endScore,
+                    scoreDiff: store.maxNegativeDiff,
+                    reviewCount: store.currentReviewCount,
+                    revisionDate: store.maxNegativeMonth,
+                    isAllPeriod: true
+                });
+            }
+        });
+        
+        updateSpikeStats();
+        displaySpikeRanking();
+        document.getElementById('spikeRevisionInfo').textContent = '全期間の最大単月変動ランキング';
+    } else {
+        // 選択された改定日のデータを取得
+        var revisionData = rawData.filter(function(row) {
+            var revDate = parseRevisionDate(row['更新日']);
+            return revDate === selectedRevisionDate;
+        });
+        
+        // 店舗ID + 更新日で重複排除（ジャンルごとに分かれているため）
+        var uniqueStores = {};
+        revisionData.forEach(function(row) {
+            var storeId = row['店舗ID'];
+            if (!uniqueStores[storeId]) {
+                uniqueStores[storeId] = row;
+            }
+        });
+        
+        // 重複排除後のデータを配列に変換
+        var uniqueRevisionData = Object.values(uniqueStores);
+        
+        // フィルター適用
+        filteredSpikeData = uniqueRevisionData.filter(function(row) {
+            var storeName = row['店名'] || '';
+            var storePrefecture = row['県'] || '';
+            var storePriceRange = row['価格帯'] || '';
+            var storeGenre = row['ジャンル名'] || '';
+            var storeConsultant = row['コンサル名'] || '';
+            var storeCompany = row['会社名'] || '';
+            
+            if (searchTerm && !storeName.toLowerCase().includes(searchTerm)) return false;
+            if (prefecture && storePrefecture !== prefecture) return false;
+            if (priceRange && storePriceRange !== priceRange) return false;
+            if (genre && !storeGenre.includes(genre)) return false;
+            if (consultantTerm && !storeConsultant.toLowerCase().includes(consultantTerm)) return false;
+            if (companyTerm && !storeCompany.toLowerCase().includes(companyTerm)) return false;
+            return true;
+        }).map(function(row) {
+            return {
+                id: row['店舗ID'],
+                name: row['店名'],
+                prefecture: row['県'] || '不明',
+                genre: row['ジャンル名'] || '不明',
+                priceRange: row['価格帯'] || '不明',
+                consultantName: row['コンサル名'] || '不明',
+                companyName: row['会社名'] || '不明',
+                score: parseFloat(row['点数']) || 0,
+                scoreDiff: parseFloat(row['点数差分']) || 0,
+                reviewCount: parseInt(row['口コミ数']) || 0,
+                revisionDate: selectedRevisionDate,
+                isAllPeriod: false
+            };
+        });
+        
+        updateSpikeStats();
+        displaySpikeRanking();
+        
+        document.getElementById('spikeRevisionInfo').textContent = selectedRevisionDate + ' の点数変動ランキング';
+    }
 }
 
 function showStoreNameDropdown() {
@@ -769,42 +920,49 @@ function displayRanking() {
 
 function updateSpikeStats() {
     var data = filteredSpikeData;
-    var positive = data.filter(function(s) { return s.maxPositiveDiff > 0; }).length;
-    var negative = data.filter(function(s) { return s.maxNegativeDiff < 0; }).length;
+    var positive = data.filter(function(s) { return s.scoreDiff > 0; }).length;
+    var negative = data.filter(function(s) { return s.scoreDiff < 0; }).length;
+    var unchanged = data.filter(function(s) { return s.scoreDiff === 0; }).length;
     
     document.getElementById('spikeStatsArea').innerHTML = 
         '<div class="stat-card"><div class="stat-number" style="color:#667eea;">' + data.length + '</div><div class="stat-label">総店舗数</div></div>' +
-        '<div class="stat-card"><div class="stat-number" style="color:#10b981;">' + positive + '</div><div class="stat-label">上昇記録あり</div></div>' +
-        '<div class="stat-card"><div class="stat-number" style="color:#ef4444;">' + negative + '</div><div class="stat-label">下降記録あり</div></div>';
+        '<div class="stat-card"><div class="stat-number" style="color:#10b981;">' + positive + '</div><div class="stat-label">上昇</div></div>' +
+        '<div class="stat-card"><div class="stat-number" style="color:#ef4444;">' + negative + '</div><div class="stat-label">下降</div></div>' +
+        '<div class="stat-card"><div class="stat-number" style="color:#64748b;">' + unchanged + '</div><div class="stat-label">変動なし</div></div>';
 }
 
 function displaySpikeRanking() {
-    var upStores = filteredSpikeData.filter(function(s) { return s.maxPositiveDiff > 0; }).sort(function(a, b) { return b.maxPositiveDiff - a.maxPositiveDiff; });
-    var downStores = filteredSpikeData.filter(function(s) { return s.maxNegativeDiff < 0; }).sort(function(a, b) { return a.maxNegativeDiff - b.maxNegativeDiff; });
+    var upStores = filteredSpikeData.filter(function(s) { return s.scoreDiff > 0; }).sort(function(a, b) { return b.scoreDiff - a.scoreDiff; });
+    var downStores = filteredSpikeData.filter(function(s) { return s.scoreDiff < 0; }).sort(function(a, b) { return a.scoreDiff - b.scoreDiff; });
     
     function createSpikeRankingHtml(stores, type) {
         if (stores.length === 0) return '<div class="empty-state">データなし</div>';
         
         return stores.map(function(store, index) {
-            var scoreText, scoreClass, monthText;
+            var scoreText, scoreClass;
             if (type === 'up') {
-                scoreText = '+' + store.maxPositiveDiff;
+                scoreText = '+' + Math.round(store.scoreDiff * 100) / 100;
                 scoreClass = 'positive';
-                monthText = store.maxPositiveMonth;
             } else {
-                scoreText = store.maxNegativeDiff;
+                scoreText = Math.round(store.scoreDiff * 100) / 100;
                 scoreClass = 'negative';
-                monthText = store.maxNegativeMonth;
             }
+            
+            var detailsHtml = escapeHtml(store.prefecture) + ' | ' + escapeHtml(store.genre) + ' | ' + escapeHtml(store.priceRange);
+            
+            // 全期間モードの場合は最大変動月を表示
+            if (store.isAllPeriod) {
+                detailsHtml += '<br>最大変動月: ' + store.revisionDate;
+            } else {
+                detailsHtml += '<br>改定後の点数: ' + store.score.toFixed(2);
+            }
+            
+            detailsHtml += '<br>口コミ数: ' + store.reviewCount + '件';
             
             return '<div class="ranking-item ' + type + '">' +
                 '<div>' +
                 '<div class="store-name">' + (index + 1) + '. ' + escapeHtml(store.name) + '</div>' +
-                '<div class="store-details">' +
-                escapeHtml(store.prefecture) + ' | ' + escapeHtml(store.genre) + ' | ' + escapeHtml(store.priceRange) +
-                '<br>最大変動月: ' + monthText +
-                '<br>口コミ数: ' + store.currentReviewCount + '件' +
-                '</div>' +
+                '<div class="store-details">' + detailsHtml + '</div>' +
                 '</div>' +
                 '<div class="score-change ' + scoreClass + '">' + scoreText + '</div>' +
                 '</div>';
@@ -1359,7 +1517,7 @@ function switchTab(tabName) {
     } else if (tabName === 'spike') {
         document.querySelector('.tab[onclick="switchTab(\'spike\')"]').classList.add('active');
         document.getElementById('spike-content').classList.add('active');
-        if (storeData.length > 0) applySpikeFilters();
+        if (storeData.length > 0 && allRevisionDates.length > 0) applySpikeFilters();
     } else if (tabName === 'detail') {
         document.querySelector('.tab[onclick="switchTab(\'detail\')"]').classList.add('active');
         document.getElementById('detail-content').classList.add('active');
